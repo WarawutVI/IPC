@@ -2,6 +2,8 @@ package pubsub;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.time.Instant;
 import java.util.*;
@@ -39,12 +41,12 @@ public class NodeApp{
     }
 
     // --------- Keys/Channels ---------
-    static final String ZSET_MEMBERS = "cluster:nodes";     // score = pid
+    static final String ZSET_MEMBERS = "cluster:nodes";     // score = pid (ยังใช้เดิม แต่เราจะเก็บ lastSeen ใน HSET)
     static final String CH_BROADCAST = "broadcast";
     static final String CH_CONTROL   = "control";
     static final String CH_PRESENCE  = "presence";          // สแนปช็อต presence
     static String HB_KEY(long pid) { return "hb:" + pid; }  // TTL heartbeat
-    static String INFO_KEY(long pid){ return "node:info:" + pid; } // HSET name, startedAt
+    static String INFO_KEY(long pid){ return "node:info:" + pid; } // HSET name, startedAt, lastSeen
 
     // --------- Node State ---------
     static class State {
@@ -65,9 +67,6 @@ public class NodeApp{
         @Override public void run() {
             while (!st.shuttingDown && !Thread.currentThread().isInterrupted()) {
                 try (Jedis jedis = newJedis(args.host, args.port, args.pass)) {
-                    // System.out.printf("[%-10s|SUB] subscribe '%s','%s','%s'%n",
-                    //         st.name, CH_BROADCAST, CH_CONTROL, CH_PRESENCE);
-
                     jedis.subscribe(new JedisPubSub() {
                         @Override public void onMessage(String ch, String msg) {
                             if (CH_BROADCAST.equals(ch)) {
@@ -83,12 +82,14 @@ public class NodeApp{
                                         System.out.printf("[%-10s|CTRL] got KILL → exit%n", st.name);
                                         shutdownNow(st);
                                     }
+                                } else if (msg.startsWith("control:killinfo")) {
+                                    // แค่พิมพ์ log สวย ๆ เมื่อ BOSS สุ่มฆ่า
+                                    System.out.printf("[%-10s|CTRL] %s%n", st.name, msg);
                                 } else {
                                     System.out.printf("[%-10s|CTRL] %s%n", st.name, msg);
                                 }
                             } else if (CH_PRESENCE.equals(ch)) {
-                                // รูปแบบข้อความ: "presence: <leaderPid>|pid1:name1,pid2:name2,..."
-                                // แสดงเป็นตารางอ่านง่าย
+                                // รูปแบบข้อความ: "presence: <leaderPid>|pid1:name1:alive,pid2:name2:alive,..."
                                 renderPresenceTable(st.name, msg);
                             }
                         }
@@ -112,7 +113,7 @@ public class NodeApp{
                     String role = st.isLeader ? "BOSS" : "WORKER";
                     String msg  = String.format("%s | %s | pid=%d @ %s", st.name, role, st.pid, Instant.now());
                     jedis.publish(CH_BROADCAST, msg);
-                    sleep(5);
+                    sleep(1);
                 } catch (Exception e) {
                     System.err.printf("[%-10s|PUB] error: %s (retry 2s)%n", st.name, e.getMessage());
                     sleep(2);
@@ -121,36 +122,103 @@ public class NodeApp{
         }
     }
 
-    // --------- Coordinator (HB + election + presence publish) ---------
+    // --------- Console Commander (อ่านคำสั่ง kill) ---------
+    static class Commander implements Runnable {
+        final Args a; final State st;
+        Commander(Args a, State s) { this.a = a; this.st = s; }
+
+        @Override public void run() {
+            BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+            while (!st.shuttingDown && !Thread.currentThread().isInterrupted()) {
+                try {
+                    String line = br.readLine();
+                    if (line == null) { sleep(1); continue; }
+                    line = line.trim();
+                    if (line.isEmpty()) continue;
+                    if (!st.isLeader) {
+                        System.out.printf("[%-10s|CMD ] ignore '%s' (not leader)%n", st.name, line);
+                        continue;
+                    }
+                    if (line.equalsIgnoreCase("kill random")) {
+                        try (Jedis j = newJedis(a.host, a.port, a.pass)) {
+                            List<Long> alive = aliveMembers(j);
+                            // เอาเฉพาะ worker
+                            List<Long> workers = alive.stream().filter(pid -> pid != st.pid).collect(Collectors.toList());
+                            if (workers.isEmpty()) {
+                                System.out.printf("[%-10s|CMD ] no worker to kill%n", st.name);
+                                continue;
+                            }
+                            long target = workers.get(new Random().nextInt(workers.size()));
+                            String tname = safeName(j, target);
+                            System.out.printf("[%-10s|CMD ] RANDOM KILL → pid=%d (%s)%n", st.name, target, tname);
+                            j.publish(CH_CONTROL, "control:killinfo leader " + st.pid + " kill " + target + " ("+tname+")");
+                            j.publish(CH_CONTROL, "control:kill " + target);
+                        }
+                    } else if (line.toLowerCase().startsWith("kill ")) {
+                        String[] parts = line.split("\\s+");
+                        if (parts.length >= 2) {
+                            long target = Long.parseLong(parts[1]);
+                            try (Jedis j = newJedis(a.host, a.port, a.pass)) {
+                                String tname = safeName(j, target);
+                                System.out.printf("[%-10s|CMD ] DIRECT KILL → pid=%d (%s)%n", st.name, target, tname);
+                                j.publish(CH_CONTROL, "control:killinfo leader " + st.pid + " kill " + target + " ("+tname+")");
+                                j.publish(CH_CONTROL, "control:kill " + target);
+                            }
+                        }
+                    } else {
+                        System.out.printf("[%-10s|CMD ] unknown: %s (use: 'kill random' | 'kill <pid>')%n", st.name, line);
+                    }
+                } catch (Exception e) {
+                    System.err.printf("[%-10s|CMD ] error: %s%n", st.name, e.getMessage());
+                    sleep(1);
+                }
+            }
+        }
+    }
+
+    // --------- Coordinator (HB + election + presence publish + delayed removal) ---------
     static class Coordinator implements Runnable {
         final Args a; final State st;
         Coordinator(Args a, State s) { this.a = a; this.st = s; }
+
+        static final int HB_TTL_SEC = 5;
+        static final long REMOVE_DELAY_MS = 20_000; // 20 วินาที
 
         @Override public void run() {
             // ใส่ตัวเองและตั้งข้อมูลโหนด
             try (Jedis j = newJedis(a.host, a.port, a.pass)) {
                 j.zadd(ZSET_MEMBERS, st.pid, Long.toString(st.pid));
+                long now = System.currentTimeMillis();
                 j.hset(INFO_KEY(st.pid), Map.of(
                         "name", st.name,
-                        "startedAt", Long.toString(System.currentTimeMillis())
+                        "startedAt", Long.toString(now),
+                        "lastSeen", Long.toString(now)
                 ));
             }
 
             while (!st.shuttingDown && !Thread.currentThread().isInterrupted()) {
                 try (Jedis j = newJedis(a.host, a.port, a.pass)) {
-                    // 1) Heartbeat (TTL 5s)
-                    j.setex(HB_KEY(st.pid), 5, Long.toString(System.currentTimeMillis()));
+                    long now = System.currentTimeMillis();
 
-                    // 2) ล้างสมาชิกที่ตาย และลบ info
+                    // 1) Heartbeat (TTL 5s) + อัพเดต lastSeen
+                    j.setex(HB_KEY(st.pid), HB_TTL_SEC, Long.toString(now));
+                    j.hset(INFO_KEY(st.pid), "lastSeen", Long.toString(now));
+
+                    // 2) ลบสมาชิก "ที่ตายแล้วเกิน 20s" เท่านั้น
                     for (String m : j.zrevrange(ZSET_MEMBERS, 0, -1)) {
                         long pid = Long.parseLong(m);
-                        if (j.ttl(HB_KEY(pid)) <= 0) {
-                            j.zrem(ZSET_MEMBERS, m);
-                            j.del(INFO_KEY(pid));
+                        long ttl = j.ttl(HB_KEY(pid));
+                        if (ttl <= 0) { // ไม่มี HB แล้ว
+                            String ls = j.hget(INFO_KEY(pid), "lastSeen");
+                            long lastSeen = (ls != null) ? Long.parseLong(ls) : 0L;
+                            if (now - lastSeen >= REMOVE_DELAY_MS) {
+                                j.zrem(ZSET_MEMBERS, m);
+                                j.del(INFO_KEY(pid));
+                            }
                         }
                     }
 
-                    // 3) เลือก leader
+                    // 3) เลือก leader จาก "alive" เท่านั้น
                     List<Long> alive = aliveMembers(j);
                     long newLeader = alive.isEmpty() ? -1 : alive.get(0);
                     if (newLeader != st.leaderPid) {
@@ -159,8 +227,8 @@ public class NodeApp{
                         logRole(st);
                     }
 
-                    // 4) ส่ง Presence Snapshot (ทุกโหนด จะ “เห็น” รายชื่ออุปกรณ์ทั้งหมด)
-                    publishPresence(j, st.leaderPid, alive);
+                    // 4) ส่ง Presence Snapshot (รวมทั้ง ALIVE และ DEAD ที่ยังไม่ครบ 20s)
+                    publishPresenceWithStatus(j, st.leaderPid);
 
                     sleep(2);
                 } catch (Exception e) {
@@ -172,12 +240,17 @@ public class NodeApp{
     }
 
     // --------- Presence helpers ---------
-    static void publishPresence(Jedis j, long leaderPid, List<Long> alivePids) {
-        // ทำสตริง "presence: <leaderPid>|pid1:name1,pid2:name2,..."
-        String members = alivePids.stream()
-                .map(pid -> pid + ":" + safeName(j, pid))
-                .collect(Collectors.joining(","));
-        String payload = "presence: " + leaderPid + "|" + members;
+    static void publishPresenceWithStatus(Jedis j, long leaderPid) {
+        long now = System.currentTimeMillis();
+        List<String> members = new ArrayList<>(j.zrevrange(ZSET_MEMBERS, 0, -1));
+        String payloadMembers = members.stream().map(m -> {
+            long pid = Long.parseLong(m);
+            String name = safeName(j, pid);
+            long ttl = j.ttl(HB_KEY(pid));
+            int alive = (ttl > 0) ? 1 : 0;
+            return pid + ":" + name + ":" + alive;
+        }).collect(Collectors.joining(","));
+        String payload = "presence: " + leaderPid + "|" + payloadMembers;
         j.publish(CH_PRESENCE, payload);
     }
 
@@ -191,7 +264,7 @@ public class NodeApp{
     }
 
     static void renderPresenceTable(String localName, String payload) {
-        // payload ตัวอย่าง: "presence: 12345|12345:A,12300:B,12200:C"
+        // payload ตัวอย่าง: "presence: 12345|12345:A:1,12300:B:1,12200:C:0"
         try {
             String body = payload.split("presence:\\s*")[1];
             String[] parts = body.split("\\|", 2);
@@ -199,21 +272,23 @@ public class NodeApp{
             String members = parts.length > 1 ? parts[1] : "";
 
             System.out.printf("%n[%-10s|PRESENCE] --- cluster members --- %s%n", localName, Instant.now());
-            System.out.printf("%-8s  %-20s  %-8s%n", "PID", "NAME", "ROLE");
-            System.out.println("-----------------------------------------------");
+            System.out.printf("%-8s  %-20s  %-8s  %-6s%n", "PID", "NAME", "ROLE", "STATUS");
+            System.out.println("-------------------------------------------------------");
             if (!members.isEmpty()) {
                 for (String item : members.split(",")) {
                     if (item.isBlank()) continue;
                     String[] kv = item.split(":");
                     long pid = Long.parseLong(kv[0]);
                     String name = kv.length > 1 ? kv[1] : ("node-" + pid);
+                    int alive = (kv.length > 2) ? Integer.parseInt(kv[2]) : 1;
                     String role = (pid == leader) ? "BOSS" : "WORKER";
-                    System.out.printf("%-8d  %-20s  %-8s%n", pid, name, role);
+                    String status = (alive == 1) ? "ALIVE" : "DEAD";
+                    System.out.printf("%-8d  %-20s  %-8s  %-6s%n", pid, name, role, status);
                 }
             } else {
                 System.out.println("(no members)");
             }
-            System.out.println("-----------------------------------------------\n");
+            System.out.println("-------------------------------------------------------\n");
         } catch (Exception ignore) {
             System.out.printf("[%-10s|PRESENCE] %s%n", localName, payload);
         }
@@ -257,22 +332,24 @@ public class NodeApp{
         System.out.printf("Start '%s' pid=%d -> redis %s:%d (auth=%s)%n",
                 args.name, pid, args.host, args.port, (args.pass != null ? "yes" : "no"));
 
-        // shutdown hook: ลบ HB + สมาชิก + info
+        // shutdown hook: เอาแบบ “ไม่ลบสมาชิกทันที” เพื่อให้ DEAD ค้างในตาราง 20s
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             st.shuttingDown = true;
             try (Jedis j = newJedis(args.host, args.port, args.pass)) {
+                // ลบเฉพาะ HB; คง member + info ไว้ให้ coordinator ตัดออกหลัง 20s
                 j.del(HB_KEY(st.pid));
-                j.zrem(ZSET_MEMBERS, Long.toString(st.pid));
-                j.del(INFO_KEY(st.pid));
+                // j.zrem(ZSET_MEMBERS, Long.toString(st.pid)); // อย่าลบทันที
+                // j.del(INFO_KEY(st.pid));                     // อย่าลบทันที
                 if (st.isLeader) j.publish(CH_CONTROL, "control:leader -1");
             } catch (Exception ignore) {}
             System.out.printf("[%-10s|SHUT] done%n", st.name);
         }));
 
-        ExecutorService pool = Executors.newFixedThreadPool(3);
+        ExecutorService pool = Executors.newFixedThreadPool(4);
         pool.submit(new Subscriber(args, st));
         pool.submit(new Publisher(args, st));
         pool.submit(new Coordinator(args, st));
+        pool.submit(new Commander(args, st)); // อ่านคำสั่ง kill
 
         try { pool.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS); }
         catch (InterruptedException ignored) {}

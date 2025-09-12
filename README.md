@@ -63,9 +63,8 @@ java -jar build\libs\redis-pubsub-demo-all.jar --host 192.168.1.98 --port 6379 -
 edit code you have to .\gradlew.bat clean shadowJar beforerun it 
 
 how boss kill
-docker run --rm redis redis-cli -h 192.168.1.98 -a 12345 PUBLISH control "shutdown:node-B"
-
-
+-docker run -it --rm --network host redis:7 redis-cli -h 192.168.1.98 -a 12345
+-PUBLISH control "control:kill <PID>" 
 
 
 
