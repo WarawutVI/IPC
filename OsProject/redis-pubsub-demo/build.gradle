@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    implementation 'redis.clients:jedis:5.1.5'
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+application {
+    mainClass = 'pubsub.NodeApp'
+}
+
+
+tasks.withType(JavaCompile).configureEach {
+  options.release = 21
+}
+
+tasks.named('jar') {
+    manifest { attributes 'Main-Class': 'pubsub.NodeApp' }
+}
