@@ -23,20 +23,20 @@ public class NodeApp{
             Args args = new Args();
             Map<String, String> map = new HashMap<>();
             for (int i = 0; i < a.length - 1; i += 2) {
-                if (a[i].startsWith("--")) map.put(a[i], a[i + 1]);
+                if (a[i].startsWith("--")) {map.put(a[i], a[i + 1]);}
             }
-            if (map.containsKey("--host")) args.host = map.get("--host");
-            if (map.containsKey("--port")) args.port = Integer.parseInt(map.get("--port"));
-            if (map.containsKey("--pass")) args.pass = map.get("--pass");
-            if (map.containsKey("--name")) args.name = map.get("--name");
+            if (map.containsKey("--host")){ args.host = map.get("--host");}
+            if (map.containsKey("--port")) {args.port = Integer.parseInt(map.get("--port"));}
+            if (map.containsKey("--pass")){ args.pass = map.get("--pass");}
+            if (map.containsKey("--name")){ args.name = map.get("--name");}
             return args;
         }
     }
 
     // --------- Redis helpers ---------
     static Jedis newJedis(String host, int port, String pass) {
-        Jedis j = new Jedis(host, port);
-        if (pass != null && !pass.isEmpty()) j.auth(pass);
+        Jedis j = new Jedis(host, port);  // สร้าง client เชื่อมไปยัง Redis server
+        if (pass != null && !pass.isEmpty()){ j.auth(pass);}// ถ้ามีการตั้งรหัสผ่าน
         return j;
     }
 
@@ -318,7 +318,7 @@ public class NodeApp{
 
     // --------- Main ---------
     public static void main(String[] argsArr) {
-        Args args = Args.parse(argsArr);
+        Args args = Args.parse(argsArr);//ตัวดึงstring จากcmd
 
         long pid = -1;
         try { pid = ProcessHandle.current().pid(); }
