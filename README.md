@@ -1,21 +1,26 @@
 # IPC
 Osporject
-
+#
 setting middle ware
+#
 -docker run -d --name redis-demo -p 6379:6379 redis:7 redis-server --requirepass 12345
+#
 -docker exec -it redis-demo redis-cli -a 12345 ping (redis-cli run on container out put "PONG")
-
+#
 -setting acess open powershell as admin then run:
-
+#
 New-NetFirewallRule -DisplayName "Redis 6379 Inbound (Private)" `
-  -Direction Inbound -LocalPort 6379 -Protocol TCP -Action Allow -Profile Private
-
+#
+-Direction Inbound -LocalPort 6379 -Protocol TCP -Action Allow -Profile Private
+#
 -run for IPV4 wifi  :ipconfig
+#
 -run this in other cpu :Test-NetConnection 192.168.1.10 -Port 6379 
+#
 //chahge 192.168.1.10 to your IP middle ware run in regular powershell Tcp:True mean it work
-
+#
 finish setting middle ware
-
+#
 
 
 
