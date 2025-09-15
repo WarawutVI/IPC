@@ -270,7 +270,7 @@ public class NodeApp{
                     String name = kv.length > 1 ? kv[1] : ("node-" + pid);
                     int alive = (kv.length > 2) ? Integer.parseInt(kv[2]) : 1;
                     String role = (pid == leader) ? "BOSS" : "WORKER";
-                    String status = (alive == 1) ? "ALIVE" : "DEAD";
+                    String status = (alive == 1) ? "ALIVE" : "DISAPPEAR";
                     System.out.printf("%-8d  %-20s  %-8s  %-6s%n", pid, name, role, status);
                 }
             } else {
