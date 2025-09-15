@@ -14,7 +14,7 @@ public class NodeApp{
 
     // --------- CLI args ---------
     static class Args {
-        String host = "127.0.0.1";
+        String host = "";
         int port = 6379;
         String pass = null;
         String name = "node";
@@ -70,9 +70,7 @@ public class NodeApp{
                 try (jedis) { 
                     JedisPubSub jps = new JedisPubSub() {//สร้างตัวจัดการข้อความ
                         @Override public void onMessage(String ch, String msg) {//รับข้อความจากช่อง CH_BROADCAST, CH_CONTROL, CH_PRESENCE
-                            if (CH_BROADCAST.equals(ch)) {//ถ้าเป็นข้อความจากช่อง CH_BROADCAST
-                                System.out.printf("[%-10s|MSG] %s%n", st.name, msg); //print ทำไม
-                            } else if (CH_CONTROL.equals(ch)) {
+                          if (CH_CONTROL.equals(ch)) {
                                if (msg.startsWith("control:kill")) {
                                     long target = Long.parseLong(msg.split("\\s+")[1]);//msg[1]==pid PUBLISH control "control:kill 22556"
                                     if (target == st.pid) { //เทียบกับของ
@@ -89,7 +87,7 @@ public class NodeApp{
                         }
                     };
                     //ส่งข้อความจากช่อง CH_BROADCAST, CH_CONTROL, CH_PRESENCE ไปยัง jps
-                    jedis.subscribe(jps, CH_BROADCAST, CH_CONTROL, CH_PRESENCE); //ฟังช่อง CH_BROADCAST, CH_CONTROL, CH_PRESENCE
+                    jedis.subscribe(jps, CH_CONTROL, CH_PRESENCE); //ฟังช่อง CH_BROADCAST, CH_CONTROL, CH_PRESENCE
                 } catch (Exception e) {
                     System.err.printf("[%-10s|SUB] error: %s (retry 2s)%n", st.name, e.getMessage());
                     sleep(2);
@@ -309,11 +307,11 @@ public class NodeApp{
         Args args = Args.parse(argsArr);//ตัวดึงstring จากcmd
 
         long pid = -1;
-        try { pid = ProcessHandle.current().pid(); }
-        catch (Throwable t) {
-            try { pid = Long.parseLong(ManagementFactory.getRuntimeMXBean().getName().split("@")[0]); }
-            catch (Exception ignore) {}
-        }
+        // try { pid = ProcessHandle.current().pid(); }
+        // catch (Throwable t) {
+        //     try { pid = Long.parseLong(ManagementFactory.getRuntimeMXBean().getName().split("@")[0]); }
+        //     catch (Exception ignore) {}
+        // }
         if (pid < 0) pid = new Random().nextInt(1_000_000);
 
         State st = new State(pid, args.name);
@@ -328,7 +326,7 @@ public class NodeApp{
                 j.del(HB_KEY(st.pid));
                 // j.zrem(ZSET_MEMBERS, Long.toString(st.pid)); // อย่าลบทันที
                 // j.del(INFO_KEY(st.pid));                     // อย่าลบทันที
-                if (st.isLeader) j.publish(CH_CONTROL, "control:leader -1");
+                if (st.isLeader) j.publish(CH_CONTROL, "Change Boss");
             } catch (Exception ignore) {}
             System.out.printf("[%-10s|SHUT] done%n", st.name);
         }));
