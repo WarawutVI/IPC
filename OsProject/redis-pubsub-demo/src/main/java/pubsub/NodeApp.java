@@ -166,7 +166,7 @@ public class NodeApp{
         final Args a; final State st;
         Coordinator(Args a, State s) { this.a = a; this.st = s; }
 
-        static final int HB_TTL_SEC = 1;
+        static final int HB_TTL_SEC = 3;
         static final long REMOVE_DELAY_MS = 20_000; // 20 วินาที
 
         @Override public void run() {
@@ -249,7 +249,7 @@ public class NodeApp{
         j.publish(CH_PRESENCE, payload);
     }
 
-    s
+    
 
     static void renderPresenceTable(String localName, String payload) {
         // payload ตัวอย่าง: "presence: 12345|12345:A:1,12300:B:1,12200:C:0"
