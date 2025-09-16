@@ -206,7 +206,7 @@ public class NodeApp{
                     List<Long> alive = aliveMembers(j);
                     long newLeader = alive.isEmpty() ? -1 : Collections.max(alive);
                     if (newLeader != st.leaderPid) {
-                        st.leaderPid = newLeader; st.isLeader = (newLeader == st.pid);
+                        st.leaderPid = newLeader; st.isLeader = (newLeader == st.pid);//เปลี่ยนเป็นTureได้
                         j.publish(CH_CONTROL, "control:leader " + newLeader);
                         logRole(st);
                     }
@@ -232,7 +232,7 @@ public class NodeApp{
             return "node-" + pid;
         }
     }
-    // --------- Presence helpers ---------๓๓๓๓๓๓๓
+    // --------- Presence helpers ---------
     static void publishPresenceWithStatus(Jedis j, long leaderPid) {
         long now = System.currentTimeMillis();
         List<String> members = new ArrayList<>(j.zrevrange(ZSET_MEMBERS, 0, -1));//ดึงข้อมูลจาก ZSET_MEMBERS database เริ่ม 0 ถึง สุดท้าย
@@ -293,8 +293,7 @@ public class NodeApp{
     }
 
     static List<Long> aliveMembers(Jedis j) {
-        List<Long> pids = j.zrevrange(ZSET_MEMBERS, 0, -1)
-                .stream().map(Long::parseLong).collect(Collectors.toList());
+        List<Long> pids = j.zrevrange(ZSET_MEMBERS, 0, -1).stream().map(Long::parseLong).collect(Collectors.toList());
         List<Long> alive = new ArrayList<>();
         for (Long pid : pids) if (j.ttl(HB_KEY(pid)) > 0) alive.add(pid);
         return alive; // มาก→น้อย
