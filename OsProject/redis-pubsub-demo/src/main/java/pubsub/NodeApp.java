@@ -118,43 +118,43 @@ public class NodeApp{
     }
 
     // --------- Console Commander (อ่านคำสั่ง kill) ---------
-    static class Commander implements Runnable {
-        final Args a; final State st;
-        Commander(Args a, State s) { this.a = a; this.st = s; }
+    // static class Commander implements Runnable {
+    //     final Args a; final State st;
+    //     Commander(Args a, State s) { this.a = a; this.st = s; }
 
-        @Override public void run() {
-            BufferedReader br = new BufferedReader(new InputStreamReader(System.in)); //สร้าง object BufferedReader ที่ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
-            //new InputStreamReader(System.in) สร้าง object InputStreamReader ที่ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
+    //     @Override public void run() {
+    //         BufferedReader br = new BufferedReader(new InputStreamReader(System.in)); //สร้าง object BufferedReader ที่ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
+    //         //new InputStreamReader(System.in) สร้าง object InputStreamReader ที่ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
 
-            while (!st.shuttingDown && !Thread.currentThread().isInterrupted()) {
-                try {
-                    String line = br.readLine();
-                    if (line == null || line.isEmpty() ){ sleep(1); continue; }
-                    line = line.trim();
-                    if (!st.isLeader) { //ถ้าไม่ใช่ leader
-                        System.out.printf("[%-10s|CMD ] ignore '%s' (not leader)%n", st.name, line);
-                        continue;
-                    }
+    //         while (!st.shuttingDown && !Thread.currentThread().isInterrupted()) {
+    //             try {
+    //                 String line = br.readLine();
+    //                 if (line == null || line.isEmpty() ){ sleep(1); continue; }
+    //                 line = line.trim();
+    //                 if (!st.isLeader) { //ถ้าไม่ใช่ leader
+    //                     System.out.printf("[%-10s|CMD ] ignore '%s' (not leader)%n", st.name, line);
+    //                     continue;
+    //                 }
 
-                    if (line.toLowerCase().startsWith("kill ")) {
-                        String[] parts = line.split("\\s+");
-                        if (parts.length >= 2) {
-                            long target = Long.parseLong(parts[1]);
-                            try (Jedis j = newJedis(a.host, a.port, a.pass)) {
-                                String tname = safeName(j, target);
-                                j.publish(CH_CONTROL,st.pid + " kill " + target + " ("+tname+")");
-                            }
-                        }
-                    } else {
-                        System.out.printf("[%-10s|CMD ] unknown: %s (use: 'kill random' | 'kill <pid>')%n", st.name, line);
-                    }
-                } catch (Exception e) {
-                    System.err.printf("[%-10s|CMD ] error: %s%n", st.name, e.getMessage());
-                    sleep(1);
-                }
-            }
-        }
-    }
+    //                 if (line.toLowerCase().startsWith("kill ")) {
+    //                     String[] parts = line.split("\\s+");
+    //                     if (parts.length >= 2) {
+    //                         long target = Long.parseLong(parts[1]);
+    //                         try (Jedis j = newJedis(a.host, a.port, a.pass)) {
+    //                             String tname = safeName(j, target);
+    //                             j.publish(CH_CONTROL,st.pid + " kill " + target + " ("+tname+")");
+    //                         }
+    //                     }
+    //                 } else {
+    //                     System.out.printf("[%-10s|CMD ] unknown: %s (use: 'kill random' | 'kill <pid>')%n", st.name, line);
+    //                 }
+    //             } catch (Exception e) {
+    //                 System.err.printf("[%-10s|CMD ] error: %s%n", st.name, e.getMessage());
+    //                 sleep(1);
+    //             }
+    //         }
+    //     }
+    // }
 
 
 
@@ -335,7 +335,7 @@ public class NodeApp{
         pool.submit(new Subscriber(args, st));
         pool.submit(new Publisher(args, st));
         pool.submit(new Coordinator(args, st));
-        pool.submit(new Commander(args, st)); // อ่านคำสั่ง kill
+        //pool.submit(new Commander(args, st)); // อ่านคำสั่ง kill
 
         try { pool.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS); }
         catch (InterruptedException ignored) {}
