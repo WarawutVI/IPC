@@ -1,70 +1,76 @@
-# IPC
-Osporject
-setting middle ware
-#
--docker run -d --name redis-demo -p 6379:6379 redis:7 redis-server --requirepass 12345
+1. เตรียมเครื่องก่อนเริ่ม
+    1.1 ติดตั้ง Java JDK
+        ดาวน์โหลด JDK 17 หรือใหม่กว่า:
+            Adoptium Temurin
+            Oracle JDK
 
--docker exec -it redis-demo redis-cli -a 12345 ping (redis-cli run on container out put "PONG")
+        ตรวจสอบเวอร์ชัน:
+        java -version
 
--setting acess open powershell as admin then run:
+    ควรได้ผลลัพธ์ 17.x ขึ้นไป
 
-New-NetFirewallRule -DisplayName "Redis 6379 Inbound (Private)" `
-
--Direction Inbound -LocalPort 6379 -Protocol TCP -Action Allow -Profile Private
-
--run for IPV4 wifi  :ipconfig
-
--run this in other cpu :Test-NetConnection 192.168.1.10 -Port 6379 
-
-//chahge 192.168.1.10 to your IP middle ware run in regular powershell Tcp:True mean it work
-
-finish setting middle ware
+    1.2 ติดตั้ง Docker
+        Windows/Mac: ดาวน์โหลดจาก Docker Desktop
+        Linux (Ubuntu/Debian):
+            sudo apt update
+            sudo apt install docker.io -y
+            sudo systemctl enable --now docker
 
 
+        ตรวจสอบว่า Docker พร้อมใช้งาน:
+            docker --version
+
+    1.3 ตั้งค่า Firewall (เฉพาะถ้ารันข้ามเครื่อง)
+        หาก Node หลายเครื่องต้องเชื่อม Redis เครื่องเดียว ต้องเปิดพอร์ต 6379
+
+        Windows (PowerShell as Admin):
+            New-NetFirewallRule -DisplayName "Allow Redis" -Direction Inbound -Protocol TCP -LocalPort 6379 -Action Allow
 
 
+        Linux (UFW):
+            sudo ufw allow 6379/tcp
+            sudo ufw reload
+
+        MacOS: ไปที่ System Settings > Network > Firewall > Add Rule > เปิด TCP port 6379
+
+2. รัน Redis ด้วย Docker
+    บนเครื่องที่ต้องการให้เป็น Redis Server รันคำสั่งนี้:
+        docker run -d --name redis -p 6379:6379 -v redis-data:/data redis:7 redis-server --appendonly yes --requirepass "12345" --bind 0.0.0.0
 
 
+    อธิบาย:
+    -p 6379:6379 = เปิดพอร์ต Redis ออกนอกเครื่อง
+    -v redis-data:/data = เก็บข้อมูล redis ถาวร
+    --requirepass "12345" = ตั้งรหัสผ่าน (เปลี่ยนได้ตามต้องการ)
+    --bind 0.0.0.0 = อนุญาตการเชื่อมต่อจากภายนอก
+
+    ตรวจสอบว่า Redis ทำงานแล้ว:
+    docker ps
 
 
-on manchine A is sub it has to have docker desk top
-docker run -it --rm redis:7 redis-cli -h 192.168.1.98 -p 6379 -a 12345 ping //connect to middle U can change 192.168.1.98 
-docker run -it --rm redis:7 redis-cli -h 192.168.1.98 -a 12345 SUBSCRIBE broadcast // as rule to be sub
+    ควรเห็น container ชื่อ redis รันอยู่
+
+3. Build โปรเจกต์
+    3.1 แตกไฟล์ ZIP
+        unzip IPC.zip -d IPC
+        cd IPC
+
+    3.2 Build ด้วย Gradle
+        ./gradlew clean shadowJar
 
 
-on manchine B is pub 
-docker run -it --rm redis:7 redis-cli -h 192.168.1.98 -p 6379 -a 12345 ping //connect to middle 
-docker run -it --rm redis:7 redis-cli -h 192.168.1.98 -a 12345 PUBLISH broadcast "hello from Bank notebook to sub"
+    ผลลัพธ์จะอยู่ที่:
+    build/libs/redis-pubsub-demo-all.jar
+
+4. การรันโปรแกรม
+    4.1 รัน Node (ในเครื่องใดๆ ที่มี Java + เชื่อม Redis ได้)
+        java -jar build/libs/redis-pubsub-demo-all.jar --host <IP ของเครื่องที่รัน Docker Redis> --port 6379 --name node-A --pass 12345
 
 
-4. do this on A B C device 
-
--mkdir redis-pubsub-demo
-cd redis-pubsub-demo
-mkdir -p src\main\java\pubsub
-
--then dowload  gradel 
--Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-irm get.scoop.sh | iex // on power shell 
-
--scoop install gradle
-
--gradle -v
-
-4.3 src/main/java/pubsub/NodeApp.java 
+    ตัวอย่าง (เชื่อม Redis ที่รันบน 192.168.1.50):
+        java -jar build/libs/redis-pubsub-demo-all.jar --host 192.168.1.50 --port 6379 --name node-A --pass 12345
+        java -jar build/libs/redis-pubsub-demo-all.jar --host 192.168.1.50 --port 6379 --name node-B --pass 12345
 
 
-
-java -jar build\libs\redis-pubsub-demo-all.jar --host 192.168.1.98 --port 6379 --name node-A --pass 12345 //U can change name 
-
-
-
-edit code you have to .\gradlew.bat clean shadowJar beforerun it 
-
-how boss kill
--docker run -it --rm --network host redis:7 redis-cli -h 192.168.1.98 -a 12345
--PUBLISH control "control:kill <PID>" 
-
-
-
+Tip: เปิดหลาย terminal หรือหลายเครื่องเพื่อทดสอบ Node หลายตัวพร้อมกัน
 
