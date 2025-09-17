@@ -66,6 +66,8 @@ how boss kill
 -docker run -it --rm --network host redis:7 redis-cli -h 192.168.1.98 -a 12345
 -PUBLISH control "control:kill <PID>" 
 
-
+# ดูค่า heartbeat GET hb:295727 
+# ดูข้อมูล node HGETALL node:info:295727 
+# ดู cluster nodes ZRANGE cluster:nodes 0 -1 WITHSCORES เเก้ไฟล์reamme
 
 

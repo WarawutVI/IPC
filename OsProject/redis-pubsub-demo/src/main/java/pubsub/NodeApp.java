@@ -2,7 +2,7 @@ package pubsub;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
 // import java.io.BufferedReader;
-import java.io.InputStreamReader;
+// import java.io.InputStreamReader;
 
 import java.time.Instant;
 import java.util.*;
@@ -204,7 +204,7 @@ public class NodeApp{
                     // 3) เลือก leader จาก "alive" เท่านั้น
                     List<Long> alive = aliveMembers(j);
                     long newLeader = alive.isEmpty() ? -1 : Collections.max(alive);
-                    if (newLeader != st.leaderPid) {
+                    if (newLeader != st.leaderPid) {   
                         st.leaderPid = newLeader; st.isLeader = (newLeader == st.pid);//เปลี่ยนเป็นTureได้
                         j.publish(CH_CONTROL, "control:leader " + newLeader);
                         logRole(st);
@@ -329,11 +329,11 @@ public class NodeApp{
             System.out.printf("[%-10s|SHUT] done%n", st.name);
         }));
 
-        ExecutorService pool = Executors.newFixedThreadPool(4);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
         pool.submit(new Subscriber(args, st));
         pool.submit(new Publisher(args, st));
         pool.submit(new Coordinator(args, st));
-        //pool.submit(new Commander(args, st)); // อ่านคำสั่ง kill
+        
 
         try { pool.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS); }
         catch (InterruptedException ignored) {}
