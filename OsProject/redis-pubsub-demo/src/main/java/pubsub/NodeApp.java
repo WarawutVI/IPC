@@ -342,8 +342,6 @@ public class NodeApp{
             try (Jedis j = newJedis(args.host, args.port, args.pass)) {
                 // ลบเฉพาะ HB; คง member + info ไว้ให้ coordinator ตัดออกหลัง 20s
                 j.del(HB_KEY(st.pid));
-                // j.zrem(ZSET_MEMBERS, Long.toString(st.pid)); // อย่าลบทันที
-                // j.del(INFO_KEY(st.pid));                     // อย่าลบทันที
                 if (st.isLeader) j.publish(CH_CONTROL, "control:leader -1");
             } catch (Exception ignore) {}
             System.out.printf("[%-10s|SHUT] done%n", st.name);
