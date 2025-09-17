@@ -1,10 +1,9 @@
 package pubsub;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPubSub;
-
-import java.io.BufferedReader;
+// import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.lang.management.ManagementFactory;
+
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -22,7 +21,7 @@ public class NodeApp{
         static Args parse(String[] a) {
             Args args = new Args();
             Map<String, String> map = new HashMap<>();
-            for (int i = 0; i < a.length - 1; i += 2) {
+            for (int i = 0; i < a.length - 1; i++) {
                 if (a[i].startsWith("--")) {map.put(a[i], a[i + 1]);}
             }
             if (map.containsKey("--host")){ args.host = map.get("--host");}
@@ -41,7 +40,7 @@ public class NodeApp{
     }
 
     // --------- Keys/Channels ---------
-    static final String ZSET_MEMBERS = "cluster:nodes";     // score = pid (ยังใช้เดิม แต่เราจะเก็บ lastSeen ใน HSET) //งง
+    static final String ZSET_MEMBERS = "cluster:nodes";     // score = pid (ยังใช้เดิม แต่เราจะเก็บ lastSeen ใน HSET) 
     static final String CH_BROADCAST = "broadcast";
     static final String CH_CONTROL   = "control";
     static final String CH_PRESENCE  = "presence";          // สแนปช็อต presence
@@ -253,7 +252,7 @@ public class NodeApp{
         // payload ตัวอย่าง: "presence: 12345|12345:A:1,12300:B:1,12200:C:0"
         try {
             String body = payload.split("presence:\\s*")[1];
-            String[] parts = body.split("\\|", 2);
+            String[] parts = body.split("\\|");
             long leader = Long.parseLong(parts[0].trim());
             String members = parts.length > 1 ? parts[1] : "";
 
