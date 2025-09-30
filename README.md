@@ -74,3 +74,6 @@
 
 Tip: เปิดหลาย terminal หรือหลายเครื่องเพื่อทดสอบ Node หลายตัวพร้อมกัน
 
+5.  docker run -it --rm --network host redis:7 redis-cli -h 192.168.1.98 -a 12345
+    PUBLISH control "control:kill <PID>"
+

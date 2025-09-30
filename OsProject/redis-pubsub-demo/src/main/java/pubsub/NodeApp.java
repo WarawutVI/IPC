@@ -2,9 +2,6 @@ package pubsub;
 import redis.clients.jedis.Jedis; //ใช้สำหรับการเชื่อมต่อและโต้ตอบกับ Redis server
 import redis.clients.jedis.JedisPubSub; //ใช้สำหรับการสมัครรับข้อความ (subscribe) และจัดการกับข้อความที่ได้รับจาก Redis Pub/Sub //คลาสจากไลบรารี Jedis เพื่อคุยกับ Redis
 
-import java.io.BufferedReader; //ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
-import java.io.InputStreamReader; //ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
-// import java.lang.management.ManagementFactory; //ใช้สำหรับดึงข้อมูลเกี่ยวกับ process ปัจจุบัน เช่น PID
 import java.time.Instant; //ใช้สำหรับการจัดการกับเวลาและวันที่ (iso)
 import java.util.*; //ใช้สำหรับการจัดการกับข้อมูลต่าง ๆ เช่น List, Map, Random
 import java.util.concurrent.*; //ใช้สำหรับการจัดการกับเธรดและการทำงานแบบขนาน (concurrent)
@@ -80,9 +77,8 @@ public class NodeApp{
 
                     JedisPubSub jps = new JedisPubSub() {// สร้างตัวรับข้อความ
                         @Override public void onMessage(String ch, String msg) { //เมื่อมีข้อความใหม่เข้ามา | รับข้อความจากช่อง CH_BROADCAST, CH_CONTROL, CH_PRESENCE
-                            if (CH_BROADCAST.equals(ch)) { //ถ้าข้อความมาจากช่อง CH_BROADCAST
-                                System.out.printf("[%-10s|MSG] %s%n", st.name, msg); //แสดงข้อความที่ได้รับ
-                            } else if (CH_CONTROL.equals(ch)) { 
+                           
+                            if (CH_CONTROL.equals(ch)) { 
                                if (msg.startsWith("control:kill")) { 
                                     long target = Long.parseLong(msg.split("\\s+")[1]); //msg[1]==pid | PUBLISH control "control:kill 22556"
                                     if (target == st.pid) { //เทียบกับของ
@@ -129,48 +125,7 @@ public class NodeApp{
         }
     }
 
-    // --------- Console Commander (อ่านคำสั่ง kill) ---------
-    static class Commander implements Runnable {
-        final Args a; final State st;
-        Commander(Args a, State s) { this.a = a; this.st = s; }
-
-        @Override public void run() {
-            BufferedReader br = new BufferedReader(new InputStreamReader(System.in)); //สร้าง object BufferedReader ที่ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
-            //new InputStreamReader(System.in) สร้าง object InputStreamReader ที่ใช้สำหรับ อ่านข้อความจากคีย์บอร์ด (stdin) แบบทีละบรรทัด
-
-            while (!st.shuttingDown && !Thread.currentThread().isInterrupted()) {
-                try {
-                    String line = br.readLine();
-                    if (line == null || line.isEmpty() ){ sleep(1); continue; } // ถ้าไม่มีข้อความให้รอ 1 วินาทีแล้ววนใหม่
-                    line = line.trim(); //ตัดช่องว่างออกจากข้อความ
-                    if (!st.isLeader) { //ถ้าไม่ใช่ leader
-                        System.out.printf("[%-10s|CMD ] ignore '%s' (not leader)%n", st.name, line);
-                        continue;
-                    }
-
-                    if (line.toLowerCase().startsWith("kill ")) {
-                        String[] parts = line.split("\\s+"); //split("\\s+") = แยกข้อความโดยใช้ช่องว่างเป็นตัวแบ่ง  อย่างเช่น "kill 12345" จะได้ parts[0]="kill" parts[1]="12345" \\s+ = ช่องว่าง 1 ตัวขึ้นไป
-                        if (parts.length >= 2) {
-                            long target = Long.parseLong(parts[1]); //parses[1] คือ pid ที่ต้องการ kill
-                            try (Jedis j = newJedis(a.host, a.port, a.pass)) { //try-with-resources เพื่อจัดการ resource อัตโนมัติ client close , connect to Redis
-                                String tname = safeName(j, target); //ดึงชื่อจากช่อง INFO_KEY
-                                j.publish(CH_CONTROL, st.pid + " kill " + target + " ("+tname+")"); //ส่งข้อความไปยังช่อง CH_CONTROL | .plublish(channel, message) ส่งข้อความไปยังช่องที่ระบุ
-                            }
-                        }
-                    } else {
-                        System.out.printf("[%-10s|CMD ] unknown: %s (use: 'kill random' | 'kill <pid>')%n", st.name, line); //ถ้าคำสั่งไม่ใช่ kill ให้แสดงข้อความว่าไม่รู้จักคำสั่ง line คือคำสั่งที่พิมพ์เข้ามา
-                    }
-                } catch (Exception e) {
-                    System.err.printf("[%-10s|CMD ] error: %s%n", st.name, e.getMessage()); //แสดงข้อความ error 
-                    sleep(1);
-                }
-            }
-        }
-    }
-
-
-
-
+    
     // --------- Coordinator (HB + election + presence publish + delayed removal) ---------
     static class Coordinator implements Runnable { // thread Coordinator = ระบบประสานงานกลาง ดูแลสมาชิก, เลือกหัวหน้า, แจ้งสภาพแวดล้อมให้ทุกคนรู้
         final Args a; final State st;
@@ -275,7 +230,7 @@ public class NodeApp{
     }
     // --------- Presence helpers ---------๓๓๓๓๓๓๓ 
     static void publishPresenceWithStatus(Jedis j, long leaderPid) { //ส่งข้อความจากช่อง Presence
-        long now = System.currentTimeMillis();
+        // long now = System.currentTimeMillis();
         List<String> members = new ArrayList<>(j.zrevrange(ZSET_MEMBERS, 0, -1));//ดึงข้อมูลจาก ZSET_MEMBERS database เริ่ม 0 ถึง สุดท้าย น้อย→มาก
         String payloadMembers = members.stream().map(m -> { 
             /*
@@ -366,11 +321,6 @@ public class NodeApp{
         Args args = Args.parse(argsArr);//ตัวดึงstring จากcmd
 
         long pid = -1;  
-        // try { pid = ProcessHandle.current().pid(); }
-        // catch (Throwable t) {
-        //     try { pid = Long.parseLong(ManagementFactory.getRuntimeMXBean().getName().split("@")[0]); }
-        //     catch (Exception ignore) {}
-        // }
         if (pid < 0) pid = new Random().nextInt(1_000_000); 
 
         State st = new State(pid, args.name); // สร้าง process
@@ -383,19 +333,16 @@ public class NodeApp{
             try (Jedis j = newJedis(args.host, args.port, args.pass)) {
                 // ลบเฉพาะ HB; คง member + info ไว้ให้ coordinator ตัดออกหลัง 20s
                 j.del(HB_KEY(st.pid));
-                // j.zrem(ZSET_MEMBERS, Long.toString(st.pid)); // อย่าลบทันที
-                // j.del(INFO_KEY(st.pid));                     // อย่าลบทันที
                 if (st.isLeader) j.publish(CH_CONTROL, "control:leader -1");
             } catch (Exception ignore) {}
             System.out.printf("[%-10s|SHUT] done%n", st.name);
         }));
 
-        ExecutorService pool = Executors.newFixedThreadPool(4); //ExecutorService = จัดการเธรดแบบกลุ่ม
+        ExecutorService pool = Executors.newFixedThreadPool(3); //ExecutorService = จัดการเธรดแบบกลุ่ม
         // สร้างเธรด 4 ตัว: Subscriber, Publisher, Coordinator,
         pool.submit(new Subscriber(args, st));
         pool.submit(new Publisher(args, st));
         pool.submit(new Coordinator(args, st));
-        pool.submit(new Commander(args, st)); // อ่านคำสั่ง kill
 
         try { pool.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS); }
         catch (InterruptedException ignored) {}
